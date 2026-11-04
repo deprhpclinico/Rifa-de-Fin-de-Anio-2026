@@ -31,7 +31,7 @@
      * mostramos un mensaje neutro al operador.
      */
     const SLOW_NOTICE_MS =
-        4000;
+        5550;
 
 
     /*
