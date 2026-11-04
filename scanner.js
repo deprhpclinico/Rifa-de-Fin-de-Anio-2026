@@ -17,14 +17,6 @@
 
 
     /*
-     * Una operación permanece en memoria local
-     * durante 30 segundos desde que se inicia.
-     */
-    const OPERATION_MEMORY_MS =
-        30000;
-
-
-    /*
      * Asistencia:
      *
      * solicitud inicial
@@ -44,14 +36,10 @@
 
 
     /*
-     * El timeout de cada solicitud de asistencia
-     * debe ser suficientemente corto para que
-     * ambos envíos quepan dentro de los 30 s
-     * de memoria local.
-     *
-     * Puede sobrescribirse desde config.js:
-     *
-     * ATTENDANCE_REQUEST_TIMEOUT_MS: 10000
+     * El servidor puede esperar 10 s por el lock y luego debe
+     * leer/escribir Sheets y entregar la respuesta.
+     * Ajustar tambien config.js si define un valor anterior:
+     * ATTENDANCE_REQUEST_TIMEOUT_MS: 25000
      */
     const ATTENDANCE_REQUEST_TIMEOUT_MS =
         Number.isFinite(
@@ -68,8 +56,26 @@
                 config.ATTENDANCE_REQUEST_TIMEOUT_MS
             )
             :
-            10000;
+            25000;
 
+
+    // Incluye ambos intentos, una pausa de hasta 1 s y margen.
+    // Memoria exclusivamente local: minimo 60 segundos.
+    const OPERATION_MEMORY_MS = Math.max(
+        60000,
+        AUTOMATIC_ATTEMPTS * ATTENDANCE_REQUEST_TIMEOUT_MS + 5000
+    );
+
+
+    function waitBeforeAttendanceRetry(reason, nextAttempt) {
+        const delayMs = 500 + Math.floor(Math.random() * 501);
+        console.info("[Asistencia reintento]", {
+            reason,
+            attempt: nextAttempt,
+            delayMs
+        });
+        return new Promise(resolve => setTimeout(resolve, delayMs));
+    }
 
 
     const byId =
@@ -370,7 +376,7 @@
 
         /*
          * La operación se elimina físicamente
-         * después de los 30 segundos.
+         * al vencer el plazo de memoria local.
          */
         setTimeout(
             () => {
@@ -2025,6 +2031,14 @@
 
 
 
+                    // BUSY confirma que este intento no obtuvo el lock.
+                    // Reusar el presupuesto de dos intentos; no crear otro ciclo.
+                    if (result?.code === "BUSY" && attempt < AUTOMATIC_ATTEMPTS) {
+                        showSlowAttendanceMessage(normalizedMethod);
+                        await waitBeforeAttendanceRetry("BUSY", attempt + 1);
+                        continue;
+                    }
+
                     const interpreted =
                         interpretAttendanceResponse(
                             result,
@@ -2085,6 +2099,10 @@
                             normalizedMethod
                         );
 
+                        await waitBeforeAttendanceRetry(
+                            error?.diagnosticCode || "TRANSPORT",
+                            attempt + 1
+                        );
 
                         continue;
 
