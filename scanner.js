@@ -1,7 +1,6 @@
 (() => {
     "use strict";
 
-
     const auth =
         window.AttendanceAuth;
 
